@@ -1,0 +1,35 @@
+<?php
+declare(strict_types=1);
+
+namespace Lattice\Table\Columns;
+
+use Lattice\Table\Attributes\AsColumn;
+use Lattice\Table\Enums\ColumnType;
+
+/**
+ * A numeric column rendered as currency on the client. The currency code is
+ * either fixed for the whole column ({@see currency()}) or read per row from
+ * another field ({@see currencyField()}); the cell formats with Intl, so symbol
+ * placement and per-currency decimals follow the active locale.
+ */
+#[AsColumn(ColumnType::Money)]
+final class MoneyColumn extends NumericColumn
+{
+    public ?string $currency = null;
+
+    public ?string $currencyField = null;
+
+    public function currency(string $currency): static
+    {
+        $this->currency = $currency;
+
+        return $this;
+    }
+
+    public function currencyField(string $field): static
+    {
+        $this->currencyField = $field;
+
+        return $this;
+    }
+}

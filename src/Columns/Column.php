@@ -1,0 +1,163 @@
+<?php
+declare(strict_types=1);
+
+namespace Lattice\Table\Columns;
+
+use Illuminate\Support\Collection;
+use JsonSerializable;
+use Lattice\Core\Attributes\WireEnvelope;
+use Lattice\Table\Contracts\Filterable;
+use Lattice\Table\Contracts\Sortable;
+use Lattice\Table\Enums\ColumnAlign;
+use Lattice\Table\RelationBinding;
+use Lattice\Ui\Components\Concerns\SerializesWireNode;
+use Lattice\Ui\Concerns\GatesRendering;
+use Lattice\Ui\Concerns\HasLabel;
+use Lattice\Ui\Contracts\Renderable;
+use Lattice\Ui\Enums\ColumnWidth;
+
+/**
+ * @phpstan-consistent-constructor
+ */
+#[WireEnvelope('ColumnNode')]
+abstract class Column implements JsonSerializable, Renderable
+{
+    use GatesRendering;
+    use HasLabel;
+    use SerializesWireNode;
+
+    public ColumnWidth $width = ColumnWidth::Md;
+
+    public ColumnAlign $align = ColumnAlign::Start;
+
+    /** Generation-source declaration only; the wire value is computed in {@see self::decorateProps()}. */
+    public bool $sortable = false;
+
+    public bool $toggleable = false;
+
+    public bool $hiddenByDefault = false;
+
+    /** Generation-source declaration only; the wire value is computed in {@see self::decorateProps()}. */
+    public ?ColumnFilter $filter = null;
+
+    public function __construct(protected readonly string $key)
+    {
+        $this->label = str($key)->headline()->toString();
+    }
+
+    public static function make(string $key): static
+    {
+        return new static($key);
+    }
+
+    public function key(): string
+    {
+        return $this->key;
+    }
+
+    /**
+     * The row keys this column binds — what the registry whitelists into each
+     * decorated row. Container columns override to collect their children's.
+     *
+     * @return array<int, string>
+     */
+    public function boundRowKeys(): array
+    {
+        return [$this->key];
+    }
+
+    /**
+     * The relation this column draws its value from, as a driver-agnostic
+     * binding, or null when the column reads a plain attribute. A dotted key
+     * (`author.name`) binds one related row; columns with richer semantics
+     * (e.g. TextColumn's multiple()) override.
+     */
+    public function relationBinding(): ?RelationBinding
+    {
+        if (! str_contains($this->key, '.')) {
+            return null;
+        }
+
+        [$relation, $field] = explode('.', $this->key, 2);
+
+        if ($field === '' || str_contains($field, '.')) {
+            return null;
+        }
+
+        return new RelationBinding($relation, $field, many: false);
+    }
+
+    /**
+     * @param  array<int, Column>  $columns
+     * @return Collection<string, Column>
+     */
+    public static function index(array $columns): Collection
+    {
+        return collect($columns)->keyBy(fn (Column $column): string => $column->key());
+    }
+
+    public function width(ColumnWidth $width): static
+    {
+        $this->width = $width;
+
+        return $this;
+    }
+
+    public function align(ColumnAlign $align): static
+    {
+        $this->align = $align;
+
+        return $this;
+    }
+
+    public function toggleable(bool $hiddenByDefault = false): static
+    {
+        $this->toggleable = true;
+        $this->hiddenByDefault = $hiddenByDefault;
+
+        return $this;
+    }
+
+    /**
+     * @return list<ColumnFilterOption>
+     */
+    public function filterClauseOptions(): array
+    {
+        return [];
+    }
+
+    protected function sortableValue(): bool
+    {
+        return $this instanceof Sortable && $this->isSortable();
+    }
+
+    protected function filterValue(): ?ColumnFilter
+    {
+        if (! $this instanceof Filterable || ! $this->isFilterable()) {
+            return null;
+        }
+
+        return new ColumnFilter(
+            type: $this->filterType(),
+            operators: $this->availableOperators(),
+            defaultOperator: $this->defaultFilterOperator(),
+            control: $this->filterControl(),
+            options: $this->filterSelectOptions(),
+            multiple: $this->filterMultiple(),
+            searchable: $this->filterSearchable(),
+            clauseOptions: $this->filterClauseOptions(),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $props
+     * @return array<string, mixed>
+     */
+    protected function decorateProps(array $props): array
+    {
+        $props['sortable'] = $this->sortableValue();
+        $props['filter'] = $this->filterValue();
+
+        return $props;
+    }
+}
